@@ -55,57 +55,32 @@ type SagornaModalBodyProps = {
   item: SagornaItem;
 };
 
-function isVideoUrl(url: string) {
-  return /\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(url);
-}
-
-function isAudioUrl(url: string) {
-  return /\.(mp3|wav|ogg|m4a)(\?.*)?$/i.test(url);
-}
-
-function isYouTubeUrl(url: string) {
-  return /(?:youtube\.com\/watch\?v=|youtu\.be\/)/i.test(url);
-}
-
-function youtubeEmbedUrl(url: string) {
+function getMediaLinkLabel(url: string) {
   try {
     const parsed = new URL(url);
-    const id =
-      parsed.hostname.includes("youtu.be")
-        ? parsed.pathname.replace("/", "")
-        : parsed.searchParams.get("v") ?? "";
-    return id ? `https://www.youtube.com/embed/${id}` : "";
+    const host = parsed.hostname.toLowerCase();
+
+    if (host.includes("spotify.com")) {
+      return "Open in Spotify";
+    }
+
+    if (host.includes("youtube.com") || host.includes("youtu.be")) {
+      return "Watch on YouTube";
+    }
+
+    if (host.includes("podcasts.apple.com")) {
+      return "Open in Apple Podcasts";
+    }
   } catch {
-    return "";
+    return "Open external media";
   }
+
+  return "Open external media";
 }
 
 function MediaBlock({ item }: SagornaModalBodyProps) {
   if (!item.mediaUrl) {
     return null;
-  }
-
-  if (item.type === "sound" || isAudioUrl(item.mediaUrl)) {
-    return <audio controls className="w-full" src={item.mediaUrl} />;
-  }
-
-  if (item.type === "video" || isVideoUrl(item.mediaUrl)) {
-    if (isYouTubeUrl(item.mediaUrl)) {
-      const embedUrl = youtubeEmbedUrl(item.mediaUrl);
-      if (embedUrl) {
-        return (
-          <iframe
-            src={embedUrl}
-            title={item.title}
-            className="aspect-video w-full rounded-[14px] border border-white/10"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        );
-      }
-    }
-
-    return <video controls className="aspect-video w-full rounded-[14px] border border-white/10" src={item.mediaUrl} />;
   }
 
   return (
@@ -115,7 +90,7 @@ function MediaBlock({ item }: SagornaModalBodyProps) {
       rel="noreferrer"
       className="inline-flex items-center gap-2 rounded-[14px] border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[#F4F7F6] transition-colors hover:border-[#00C2B3]/35 hover:text-[#00C2B3]"
     >
-      Open link
+      {getMediaLinkLabel(item.mediaUrl)}
     </a>
   );
 }

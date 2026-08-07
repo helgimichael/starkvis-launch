@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { SagornaItemCard } from "../sagorna/sagorna-render";
 import {
   clampPercent,
@@ -22,6 +22,7 @@ import {
   type SagornaContentType,
   type SagornaItem,
   type SagornaStatus,
+  slugify,
   upsertCmsItem,
   validateSagornaItem,
 } from "../sagorna/sagorna-content";
@@ -76,9 +77,56 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function createCleanEditorItem(type: SagornaContentType = "text") {
+  return createEmptySagornaItem(type);
+}
+
+function createUniqueDraftSlug(items: SagornaItem[], value: string, excludeId?: string) {
+  const base = slugify(value);
+  if (!base) {
+    return "";
+  }
+
+  const taken = new Set(items.filter((item) => item.id !== excludeId).map((item) => item.slug));
+  if (!taken.has(base)) {
+    return base;
+  }
+
+  let index = 2;
+  while (taken.has(`${base}-${index}`)) {
+    index += 1;
+  }
+
+  return `${base}-${index}`;
+}
+
+type CollapsibleSectionProps = {
+  title: string;
+  children: ReactNode;
+};
+
+function CollapsibleSection({ title, children }: CollapsibleSectionProps) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <span className="text-[0.58rem] uppercase tracking-[0.26em] text-[#F4F7F6]/55">{title}</span>
+        <span className="text-[0.7rem] text-[#F4F7F6]/45">{open ? "^" : "v"}</span>
+      </button>
+      {open ? <div className="mt-2.5 space-y-2.5">{children}</div> : null}
+    </section>
+  );
+}
+
 export default function NewsroomPage() {
   const previewRef = useRef<HTMLDivElement | null>(null);
   const draggedItemIdRef = useRef("");
+  const initializedSelectionRef = useRef(false);
   const [items, setItems] = useState<SagornaItem[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<SagornaItem>(() => createEmptySagornaItem("text"));
@@ -86,6 +134,7 @@ export default function NewsroomPage() {
   const [publishDateField, setPublishDateField] = useState("");
   const [publishTimeField, setPublishTimeField] = useState("");
   const [status, setStatus] = useState("Loading Supabase CMS");
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
 
   const listItems = useMemo(
     () => [...items].filter((item) => matchesQuery(item, search.trim().toLowerCase())).sort(sortByRecency),
@@ -110,10 +159,12 @@ export default function NewsroomPage() {
         setItems(loaded);
         setStatus(loaded.length > 0 ? "Supabase CMS loaded" : "No CMS items yet");
 
-        if (loaded.length > 0 && !selectedId) {
+        if (loaded.length > 0 && !initializedSelectionRef.current) {
           const firstItem = loaded[0];
           setSelectedId(firstItem.id);
           setDraft(cloneForEditing(firstItem));
+          setSlugManuallyEdited(false);
+          initializedSelectionRef.current = true;
 
           if (typeof firstItem.publishDate === "number") {
             const date = new Date(firstItem.publishDate);
@@ -145,7 +196,7 @@ export default function NewsroomPage() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [selectedId]);
+  }, []);
 
   const commitItems = async (nextItems: SagornaItem[], nextSelectedId?: string, successMessage = "Saved to Supabase") => {
     const sorted = [...nextItems].sort(sortByRecency);
@@ -183,6 +234,7 @@ export default function NewsroomPage() {
   const selectItem = (item: SagornaItem) => {
     setSelectedId(item.id);
     setDraft(cloneForEditing(item));
+    setSlugManuallyEdited(false);
 
     if (typeof item.publishDate === "number") {
       const date = new Date(item.publishDate);
@@ -200,14 +252,31 @@ export default function NewsroomPage() {
   };
 
   const createItem = (type: SagornaContentType = "text") => {
-    const titleSeed = draft.title.trim() || getSagornaContentTypeMeta(type).label;
-    const item = createNewSagornaItem(type, items, titleSeed);
-    void commitItems(upsertCmsItem(items, item), item.id, "Draft created");
-    selectItem(item);
+    const item = createCleanEditorItem(type);
+    setSelectedId("");
+    setDraft(item);
+    initializedSelectionRef.current = true;
+    setPublishDateField("");
+    setPublishTimeField("");
+    setSlugManuallyEdited(false);
+    setStatus("New item ready");
   };
 
   const updateDraft = <K extends keyof SagornaItem>(key: K, value: SagornaItem[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateTitle = (title: string) => {
+    setDraft((current) => ({
+      ...current,
+      title,
+      slug: slugManuallyEdited ? current.slug : createUniqueDraftSlug(items, title, current.id || undefined),
+    }));
+  };
+
+  const updateSlug = (slug: string) => {
+    setSlugManuallyEdited(true);
+    updateDraft("slug", slugify(slug));
   };
 
   const handleFileUpload = async (field: "mediaUrl" | "thumbnail", file: File | null) => {
@@ -349,6 +418,7 @@ export default function NewsroomPage() {
     if (selectedId === id) {
       const next = nextItems[0] ?? createEmptySagornaItem("text");
       setDraft(cloneForEditing(next));
+      setSlugManuallyEdited(Boolean(next.id));
       if (typeof next.publishDate === "number") {
         const date = new Date(next.publishDate);
         const year = date.getFullYear();
@@ -466,7 +536,6 @@ export default function NewsroomPage() {
                         setDraft((current) => ({
                           ...current,
                           type,
-                          title: current.title || meta.label,
                         }))
                       }
                       className={`rounded-[14px] border px-2 py-2.5 text-left transition-colors duration-300 ease-out ${
@@ -489,11 +558,12 @@ export default function NewsroomPage() {
               <p className="text-[0.58rem] uppercase tracking-[0.26em] text-[#F4F7F6]/55">Editor</p>
 
               <div className="mt-2.5 space-y-2.5">
+                <p className="text-[0.55rem] uppercase tracking-[0.22em] text-[#F4F7F6]/40">Basic Information</p>
                 <label className="block">
                   <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">Title</span>
                   <input
                     value={draft.title}
-                    onChange={(event) => updateItemField("title", event.target.value)}
+                    onChange={(event) => updateTitle(event.target.value)}
                     className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
                   />
                 </label>
@@ -504,8 +574,8 @@ export default function NewsroomPage() {
                   </span>
                   <input
                     value={draft.slug}
-                    readOnly
-                    className="h-9 w-full rounded-[14px] border border-white/10 bg-black/35 px-3 text-[0.78rem] text-[#F4F7F6]/55 outline-none"
+                    onChange={(event) => updateSlug(event.target.value)}
+                    className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.78rem] text-[#F4F7F6]/75 outline-none transition-colors focus:border-[#00C2B3]/50"
                   />
                 </label>
 
@@ -532,85 +602,89 @@ export default function NewsroomPage() {
                     className="w-full rounded-[14px] border border-white/10 bg-black/20 px-3 py-2 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
                   />
                 </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">
-                    Media URL
-                  </span>
-                  <input
-                    value={draft.mediaUrl}
-                    onChange={(event) => updateItemField("mediaUrl", event.target.value)}
-                    placeholder="Optional"
-                    className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
-                  />
-                  <div className="mt-1 flex items-center gap-2">
-                    <label className="inline-flex h-8 cursor-pointer items-center rounded-[12px] border border-white/10 bg-white/[0.03] px-3 text-[0.55rem] uppercase tracking-[0.18em] text-[#F4F7F6]/70 transition-colors hover:border-[#00C2B3]/35 hover:text-[#00C2B3]">
-                      Upload File
-                      <input
-                        type="file"
-                        accept=".png,.jpg,.jpeg,.webp,.mp4,.webm,.mov,.mp3,.wav,.m4a,.flac,.pdf,.docx,.txt,.md"
-                        className="hidden"
-                        onChange={(event) => {
-                          void handleFileUpload("mediaUrl", event.target.files?.[0] ?? null);
-                          event.currentTarget.value = "";
-                        }}
-                      />
-                    </label>
-                    <span className="text-[0.55rem] text-[#F4F7F6]/35">or paste URL</span>
-                  </div>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">
-                    Thumbnail
-                  </span>
-                  <input
-                    value={draft.thumbnail}
-                    onChange={(event) => updateItemField("thumbnail", event.target.value)}
-                    placeholder="Optional"
-                    className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
-                  />
-                  <div className="mt-1 flex items-center gap-2">
-                    <label className="inline-flex h-8 cursor-pointer items-center rounded-[12px] border border-white/10 bg-white/[0.03] px-3 text-[0.55rem] uppercase tracking-[0.18em] text-[#F4F7F6]/70 transition-colors hover:border-[#00C2B3]/35 hover:text-[#00C2B3]">
-                      Upload File
-                      <input
-                        type="file"
-                        accept=".png,.jpg,.jpeg,.webp,.mp4,.webm,.mov,.mp3,.wav,.m4a,.flac,.pdf,.docx,.txt,.md"
-                        className="hidden"
-                        onChange={(event) => {
-                          void handleFileUpload("thumbnail", event.target.files?.[0] ?? null);
-                          event.currentTarget.value = "";
-                        }}
-                      />
-                    </label>
-                  </div>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">
-                    Series
-                  </span>
-                  <input
-                    value={draft.series ?? ""}
-                    onChange={(event) => updateItemField("series", event.target.value)}
-                    placeholder="research, podcast, development..."
-                    className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">
-                    Tags
-                  </span>
-                  <input
-                    value={joinTags(draft.tags)}
-                    onChange={(event) => updateItemField("tags", splitTags(event.target.value))}
-                    placeholder="comma-separated"
-                    className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
-                  />
-                </label>
               </div>
             </section>
+
+            <CollapsibleSection title="Media">
+              <label className="block">
+                <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">
+                  Media URL
+                </span>
+                <input
+                  value={draft.mediaUrl}
+                  onChange={(event) => updateItemField("mediaUrl", event.target.value)}
+                  placeholder="Optional"
+                  className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
+                />
+                <div className="mt-1 flex items-center gap-2">
+                  <label className="inline-flex h-8 cursor-pointer items-center rounded-[12px] border border-white/10 bg-white/[0.03] px-3 text-[0.55rem] uppercase tracking-[0.18em] text-[#F4F7F6]/70 transition-colors hover:border-[#00C2B3]/35 hover:text-[#00C2B3]">
+                    Upload File
+                    <input
+                      type="file"
+                      accept=".png,.jpg,.jpeg,.webp,.mp4,.webm,.mov,.mp3,.wav,.m4a,.flac,.pdf,.docx,.txt,.md"
+                      className="hidden"
+                      onChange={(event) => {
+                        void handleFileUpload("mediaUrl", event.target.files?.[0] ?? null);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  <span className="text-[0.55rem] text-[#F4F7F6]/35">or paste URL</span>
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">
+                  Thumbnail
+                </span>
+                <input
+                  value={draft.thumbnail}
+                  onChange={(event) => updateItemField("thumbnail", event.target.value)}
+                  placeholder="Optional"
+                  className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
+                />
+                <div className="mt-1 flex items-center gap-2">
+                  <label className="inline-flex h-8 cursor-pointer items-center rounded-[12px] border border-white/10 bg-white/[0.03] px-3 text-[0.55rem] uppercase tracking-[0.18em] text-[#F4F7F6]/70 transition-colors hover:border-[#00C2B3]/35 hover:text-[#00C2B3]">
+                    Upload File
+                    <input
+                      type="file"
+                      accept=".png,.jpg,.jpeg,.webp,.mp4,.webm,.mov,.mp3,.wav,.m4a,.flac,.pdf,.docx,.txt,.md"
+                      className="hidden"
+                      onChange={(event) => {
+                        void handleFileUpload("thumbnail", event.target.files?.[0] ?? null);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </label>
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Organization">
+              <label className="block">
+                <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">
+                  Series
+                </span>
+                <input
+                  value={draft.series ?? ""}
+                  onChange={(event) => updateItemField("series", event.target.value)}
+                  placeholder="research, podcast, development..."
+                  className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">
+                  Tags
+                </span>
+                <input
+                  value={joinTags(draft.tags)}
+                  onChange={(event) => updateItemField("tags", splitTags(event.target.value))}
+                  placeholder="comma-separated"
+                  className="h-9 w-full rounded-[14px] border border-white/10 bg-black/20 px-3 text-[0.85rem] outline-none transition-colors focus:border-[#00C2B3]/50"
+                />
+              </label>
+            </CollapsibleSection>
 
             <section className="rounded-[16px] border border-white/10 bg-white/[0.03] p-3">
               <p className="text-[0.58rem] uppercase tracking-[0.26em] text-[#F4F7F6]/55">Publish</p>
