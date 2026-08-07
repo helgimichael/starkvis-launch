@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { generateExcerpt } from "@/app/sagorna/sagorna-content";
-import { readCmsItemBySlugFromDisk } from "@/lib/cms-store";
+import { getCmsItemBySlug } from "@/lib/cms-repository";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
-function isPublishedStory(item: Awaited<ReturnType<typeof readCmsItemBySlugFromDisk>>) {
+export const dynamic = "force-dynamic";
+
+function isPublishedStory(item: Awaited<ReturnType<typeof getCmsItemBySlug>>) {
   if (!item) {
     return false;
   }
@@ -17,7 +19,7 @@ function isPublishedStory(item: Awaited<ReturnType<typeof readCmsItemBySlugFromD
   return item.status === "scheduled" && typeof item.publishDate === "number" && item.publishDate <= Date.now();
 }
 
-function resolveOgImage(item: NonNullable<Awaited<ReturnType<typeof readCmsItemBySlugFromDisk>>>) {
+function resolveOgImage(item: NonNullable<Awaited<ReturnType<typeof getCmsItemBySlug>>>) {
   const candidate = item.thumbnail.trim() || item.mediaUrl.trim();
   if (candidate.startsWith("/") || candidate.startsWith("http://") || candidate.startsWith("https://")) {
     return candidate;
@@ -32,7 +34,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const item = await readCmsItemBySlugFromDisk(decodeURIComponent(slug));
+  const item = await getCmsItemBySlug(decodeURIComponent(slug));
 
   if (!item || !isPublishedStory(item)) {
     return {
@@ -90,7 +92,7 @@ export default async function SagornaSlugPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const item = await readCmsItemBySlugFromDisk(decodeURIComponent(slug));
+  const item = await getCmsItemBySlug(decodeURIComponent(slug));
 
   if (!item || !isPublishedStory(item)) {
     notFound();

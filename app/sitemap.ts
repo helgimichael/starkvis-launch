@@ -1,10 +1,12 @@
 import type { MetadataRoute } from "next";
-import { readPublishedCmsItemsFromDisk } from "@/lib/cms-store";
+import { listPublishedCmsItems } from "@/lib/cms-repository";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
+export const dynamic = "force-dynamic";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const publishedItems = await readPublishedCmsItemsFromDisk();
+  const publishedItems = await listPublishedCmsItems();
 
   return [
     {
@@ -27,4 +29,3 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ];
 }
-

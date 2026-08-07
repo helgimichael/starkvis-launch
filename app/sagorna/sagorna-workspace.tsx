@@ -5,16 +5,15 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
-import { CMS_CHANGE_EVENT, getSagornaContentTypeMeta } from "./sagorna-content";
+import { getSagornaContentTypeMeta } from "./sagorna-content";
 import { SagornaItemCard, SagornaModalBody } from "./sagorna-render";
 import { SagornaIconButton } from "./sagorna-icon-button";
 import { useExperienceController } from "./experience-provider";
 import {
   findCmsItemBySlug,
-  loadArchivedSagornaItemsSafe,
-  loadPublishedSagornaItemsSafe,
   type SagornaItem,
 } from "./sagorna-content";
+import { listArchivedCmsItems, listPublishedCmsItems } from "@/lib/cms-repository";
 
 const TRACKS = [
   { title: "Iron Frost", src: "/iron-frost.mp3" },
@@ -95,22 +94,34 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
   }, [archiveFocusedSlug, archiveItems]);
 
   useEffect(() => {
-    const refresh = () => {
-      const reloadedPublished = loadPublishedSagornaItemsSafe();
-      const reloadedArchived = loadArchivedSagornaItemsSafe();
-      setItems(reloadedPublished);
-      setArchiveItems(reloadedArchived);
-      setLoaded(true);
+    let cancelled = false;
+
+    const refresh = async () => {
+      try {
+        const [reloadedPublished, reloadedArchived] = await Promise.all([
+          listPublishedCmsItems(),
+          listArchivedCmsItems(),
+        ]);
+
+        if (!cancelled) {
+          setItems(reloadedPublished);
+          setArchiveItems(reloadedArchived);
+          setLoaded(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setLoaded(true);
+        }
+      }
     };
 
-    refresh();
-    window.addEventListener("storage", refresh);
-    window.addEventListener(CMS_CHANGE_EVENT, refresh);
-    const interval = window.setInterval(refresh, 30000);
+    void refresh();
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, 30000);
 
     return () => {
-      window.removeEventListener("storage", refresh);
-      window.removeEventListener(CMS_CHANGE_EVENT, refresh);
+      cancelled = true;
       window.clearInterval(interval);
     };
   }, []);

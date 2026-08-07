@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 import { SagornaItemCard } from "../sagorna/sagorna-render";
 import {
-  CMS_CHANGE_EVENT,
   clampPercent,
   cloneForEditing,
   createEmptySagornaItem,
@@ -14,11 +13,9 @@ import {
   deleteCmsItem,
   formatSagornaDateTime,
   getSagornaContentTypeMeta,
-  loadCmsItemsSafe,
   parsePublishDate,
   prepareCmsItem,
   restoreCmsItem,
-  saveCmsItems,
   setCmsItemPosition,
   supportedSagornaContentTypes,
   isValidMediaReference,
@@ -28,6 +25,7 @@ import {
   upsertCmsItem,
   validateSagornaItem,
 } from "../sagorna/sagorna-content";
+import { listCmsItems, replaceCmsItems } from "@/lib/cms-repository";
 
 function matchesQuery(item: SagornaItem, query: string) {
   if (!query) {
@@ -87,7 +85,7 @@ export default function NewsroomPage() {
   const [search, setSearch] = useState("");
   const [publishDateField, setPublishDateField] = useState("");
   const [publishTimeField, setPublishTimeField] = useState("");
-  const [status, setStatus] = useState("Local draft workspace");
+  const [status, setStatus] = useState("Loading Supabase CMS");
 
   const listItems = useMemo(
     () => [...items].filter((item) => matchesQuery(item, search.trim().toLowerCase())).sort(sortByRecency),
@@ -100,51 +98,85 @@ export default function NewsroomPage() {
   const previewRenderItems = publishedItems;
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const loaded = loadCmsItemsSafe().sort(sortByRecency);
-      setItems(loaded);
+    let cancelled = false;
 
-      if (loaded.length > 0) {
-        const firstItem = loaded[0];
-        setSelectedId(firstItem.id);
-        setDraft(cloneForEditing(firstItem));
-        if (typeof firstItem.publishDate === "number") {
-          const date = new Date(firstItem.publishDate);
-          const year = date.getFullYear();
-          const month = `${date.getMonth() + 1}`.padStart(2, "0");
-          const day = `${date.getDate()}`.padStart(2, "0");
-          const hours = `${date.getHours()}`.padStart(2, "0");
-          const minutes = `${date.getMinutes()}`.padStart(2, "0");
-          setPublishDateField(`${year}-${month}-${day}`);
-          setPublishTimeField(`${hours}:${minutes}`);
+    const refresh = async () => {
+      try {
+        const loaded = (await listCmsItems()).sort(sortByRecency);
+        if (cancelled) {
+          return;
+        }
+
+        setItems(loaded);
+        setStatus(loaded.length > 0 ? "Supabase CMS loaded" : "No CMS items yet");
+
+        if (loaded.length > 0 && !selectedId) {
+          const firstItem = loaded[0];
+          setSelectedId(firstItem.id);
+          setDraft(cloneForEditing(firstItem));
+
+          if (typeof firstItem.publishDate === "number") {
+            const date = new Date(firstItem.publishDate);
+            const year = date.getFullYear();
+            const month = `${date.getMonth() + 1}`.padStart(2, "0");
+            const day = `${date.getDate()}`.padStart(2, "0");
+            const hours = `${date.getHours()}`.padStart(2, "0");
+            const minutes = `${date.getMinutes()}`.padStart(2, "0");
+            setPublishDateField(`${year}-${month}-${day}`);
+            setPublishTimeField(`${hours}:${minutes}`);
+          } else {
+            setPublishDateField("");
+            setPublishTimeField("");
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : "Could not load CMS items");
         }
       }
-    }, 0);
-
-    const refresh = () => {
-      const reloaded = loadCmsItemsSafe().sort(sortByRecency);
-      setItems(reloaded);
     };
 
-    window.addEventListener("storage", refresh);
-    window.addEventListener(CMS_CHANGE_EVENT, refresh);
-    const interval = window.setInterval(refresh, 30000);
+    void refresh();
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, 30000);
 
     return () => {
-      window.clearTimeout(timer);
+      cancelled = true;
       window.clearInterval(interval);
-      window.removeEventListener("storage", refresh);
-      window.removeEventListener(CMS_CHANGE_EVENT, refresh);
     };
-  }, []);
+  }, [selectedId]);
 
-  const commitItems = (nextItems: SagornaItem[], nextSelectedId?: string) => {
+  const commitItems = async (nextItems: SagornaItem[], nextSelectedId?: string, successMessage = "Saved to Supabase") => {
     const sorted = [...nextItems].sort(sortByRecency);
+    const previousItems = items;
     setItems(sorted);
-    saveCmsItems(sorted);
+    setStatus("Saving to Supabase");
 
     if (typeof nextSelectedId === "string") {
       setSelectedId(nextSelectedId);
+    }
+
+    try {
+      const saved = (await replaceCmsItems(sorted, previousItems)).sort(sortByRecency);
+      setItems(saved);
+      if (typeof nextSelectedId === "string") {
+        const optimisticSelection = sorted.find((item) => item.id === nextSelectedId);
+        const savedSelection =
+          saved.find((item) => item.id === nextSelectedId) ??
+          (optimisticSelection ? saved.find((item) => item.slug === optimisticSelection.slug) : undefined);
+
+        if (savedSelection) {
+          setSelectedId(savedSelection.id);
+          setDraft(cloneForEditing(savedSelection));
+        }
+      }
+      setStatus(successMessage);
+      return saved;
+    } catch (error) {
+      setItems(previousItems);
+      setStatus(error instanceof Error ? error.message : "Could not save CMS items");
+      return null;
     }
   };
 
@@ -170,9 +202,8 @@ export default function NewsroomPage() {
   const createItem = (type: SagornaContentType = "text") => {
     const titleSeed = draft.title.trim() || getSagornaContentTypeMeta(type).label;
     const item = createNewSagornaItem(type, items, titleSeed);
-    commitItems(upsertCmsItem(items, item), item.id);
+    void commitItems(upsertCmsItem(items, item), item.id, "Draft created");
     selectItem(item);
-    setStatus("New item created");
   };
 
   const updateDraft = <K extends keyof SagornaItem>(key: K, value: SagornaItem[K]) => {
@@ -201,9 +232,8 @@ export default function NewsroomPage() {
   const duplicateCurrentItem = () => {
     const source = draft.id ? draft : createNewSagornaItem(draft.type, items, draft.title || getSagornaContentTypeMeta(draft.type).label);
     const duplicated = duplicateCmsItem(source, items);
-    commitItems(upsertCmsItem(items, duplicated), duplicated.id);
+    void commitItems(upsertCmsItem(items, duplicated), duplicated.id, "Item duplicated");
     selectItem(duplicated);
-    setStatus("Item duplicated");
   };
 
   const saveEditorItem = (nextStatus: SagornaStatus, nextPublishDate?: number) => {
@@ -238,16 +268,17 @@ export default function NewsroomPage() {
       return null;
     }
 
-    commitItems(upsertCmsItem(items, normalized), normalized.id);
-    selectItem(normalized);
+    const successMessage =
+      normalized.status === "published"
+        ? "Published to Supabase"
+        : normalized.status === "scheduled"
+          ? "Scheduled in Supabase"
+          : normalized.status === "archived"
+            ? "Archived in Supabase"
+            : "Draft saved to Supabase";
 
-    if (normalized.status === "published") {
-      setStatus("Published to Sagorna");
-    } else if (normalized.status === "scheduled") {
-      setStatus("Scheduled");
-    } else {
-      setStatus("Draft saved");
-    }
+    void commitItems(upsertCmsItem(items, normalized), normalized.id, successMessage);
+    selectItem(normalized);
 
     return normalized;
   };
@@ -290,9 +321,8 @@ export default function NewsroomPage() {
       },
     );
 
-    commitItems(upsertCmsItem(items, archived), archived.id);
+    void commitItems(upsertCmsItem(items, archived), archived.id, "Archived in Supabase");
     selectItem(archived);
-    setStatus("Archived");
   };
 
   const handleRestore = () => {
@@ -301,9 +331,8 @@ export default function NewsroomPage() {
     }
 
     const restored = restoreCmsItem(draft, items);
-    commitItems(upsertCmsItem(items, restored), restored.id);
+    void commitItems(upsertCmsItem(items, restored), restored.id, "Restored to draft");
     selectItem(restored);
-    setStatus("Restored to draft");
   };
 
   const handleDelete = (id: string) => {
@@ -315,7 +344,7 @@ export default function NewsroomPage() {
 
     const nextItems = deleteCmsItem(items, id);
     const nextSelectedId = selectedId === id ? nextItems[0]?.id ?? "" : selectedId;
-    commitItems(nextItems, nextSelectedId);
+    void commitItems(nextItems, nextSelectedId, "Deleted from Supabase");
 
     if (selectedId === id) {
       const next = nextItems[0] ?? createEmptySagornaItem("text");
@@ -335,7 +364,6 @@ export default function NewsroomPage() {
       }
     }
 
-    setStatus("Deleted permanently");
   };
 
   const handlePreviewItemDragStart = (event: ReactDragEvent<HTMLDivElement>, item: SagornaItem) => {
@@ -367,13 +395,12 @@ export default function NewsroomPage() {
       }
 
       const nextItems = setCmsItemPosition(items, draggedItem.id, x, y);
-      commitItems(nextItems, draggedItem.id);
+      void commitItems(nextItems, draggedItem.id, "Item moved");
       const updatedItem = nextItems.find((item) => item.id === draggedItem.id);
       if (updatedItem) {
         setDraft(cloneForEditing(updatedItem));
       }
       draggedItemIdRef.current = "";
-      setStatus("Item moved");
       return;
     }
 
@@ -388,9 +415,8 @@ export default function NewsroomPage() {
       x: clampPercent(x),
       y: clampPercent(y),
     };
-    commitItems(upsertCmsItem(items, nextItem), nextItem.id);
+    void commitItems(upsertCmsItem(items, nextItem), nextItem.id, "Item placed");
     selectItem(nextItem);
-    setStatus(`New ${getSagornaContentTypeMeta(type).label.toLowerCase()} item placed`);
   };
 
   const updateItemField = <K extends keyof SagornaItem>(key: K, value: SagornaItem[K]) => {
@@ -786,11 +812,10 @@ export default function NewsroomPage() {
                               event.stopPropagation();
                               if (item.status === "archived") {
                                   const restored = restoreCmsItem(item, items);
-                                  commitItems(upsertCmsItem(items, restored), restored.id);
+                                  void commitItems(upsertCmsItem(items, restored), restored.id, "Restored to draft");
                                   if (selectedId === item.id) {
                                     selectItem(restored);
                                   }
-                                  setStatus("Restored");
                                 } else {
                                   const archived = prepareCmsItem(
                                     {
@@ -801,11 +826,10 @@ export default function NewsroomPage() {
                                     items,
                                     { status: "archived", archivedAt: Date.now() },
                                   );
-                                  commitItems(upsertCmsItem(items, archived), archived.id);
+                                  void commitItems(upsertCmsItem(items, archived), archived.id, "Archived in Supabase");
                                   if (selectedId === item.id) {
                                     selectItem(archived);
                                   }
-                                  setStatus("Archived");
                                 }
                               }}
                               className="text-[0.54rem] uppercase tracking-[0.18em] text-[#F4F7F6]/40 hover:text-[#00C2B3]"
@@ -817,9 +841,8 @@ export default function NewsroomPage() {
                               onClick={(event) => {
                                 event.stopPropagation();
                                 const duplicated = duplicateCmsItem(item, items);
-                                commitItems(upsertCmsItem(items, duplicated), duplicated.id);
+                                void commitItems(upsertCmsItem(items, duplicated), duplicated.id, "Item duplicated");
                                 selectItem(duplicated);
-                                setStatus("Item duplicated");
                               }}
                               className="text-[0.54rem] uppercase tracking-[0.18em] text-[#F4F7F6]/40 hover:text-[#00C2B3]"
                             >
