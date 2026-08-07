@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
+import { SagornaIconButton } from "./sagorna/sagorna-icon-button";
 
 type NotifyStatus = "idle" | "loading" | "success" | "duplicate" | "invalid" | "error";
 
@@ -23,7 +24,6 @@ export default function Home() {
     "enter-button condensed-type flex h-[35px] w-[142px] items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-[0.61rem] font-medium uppercase tracking-[0.25em] text-[#F4F7F6] backdrop-blur-[12px] transition-[background-color,border-color,color,backdrop-filter,transform] duration-300 ease-out hover:border-[#00C2B3]/70 hover:bg-white/[0.06] hover:text-[#00C2B3] focus-visible:border-[#00C2B3]/70 focus-visible:outline-none focus-visible:ring-0 active:translate-y-[2px] disabled:cursor-default disabled:opacity-100 [text-shadow:none]";
   const launchIconClassName =
     "enter-button inline-flex h-[29px] w-[29px] items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-[#F4F7F6] backdrop-blur-[12px] transition-[background-color,border-color,color,backdrop-filter,transform] duration-300 ease-out hover:border-[#00C2B3]/70 hover:bg-white/[0.06] hover:text-[#00C2B3] focus-visible:border-[#00C2B3]/70 focus-visible:outline-none focus-visible:ring-0 active:translate-y-[2px] disabled:cursor-default disabled:opacity-100";
-
   useEffect(() => {
     return () => {
       if (navigateTimerRef.current) {
@@ -168,6 +168,22 @@ export default function Home() {
           className="h-[30px] w-auto sm:h-[36px] lg:h-[40px]"
         />
       </Link>
+
+      <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+        <SagornaIconButton
+          ariaLabel="Open tactical board"
+          onClick={() => {
+            window.open("https://tacticalboard.starkv.is", "_blank", "noopener,noreferrer");
+          }}
+          icon={
+            <svg viewBox="0 0 24 24" className="h-[16px] w-[16px]" fill="none" aria-hidden="true">
+              <rect x="5" y="5" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M8 8h3.5M8 12h8M8 16h5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M15.5 8.5 18 11l-2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          }
+        />
+      </div>
 
 
       <section

@@ -7,6 +7,7 @@ import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { CMS_CHANGE_EVENT, getSagornaContentTypeMeta } from "./sagorna-content";
 import { SagornaItemCard, SagornaModalBody } from "./sagorna-render";
+import { SagornaIconButton } from "./sagorna-icon-button";
 import { useExperienceController } from "./experience-provider";
 import {
   findCmsItemBySlug,
@@ -482,26 +483,25 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
           )}
         </button>
 
-        <button
-          type="button"
+        <SagornaIconButton
+          ariaLabel={soundEnabled ? "Turn background sound off" : "Turn background sound on"}
           onClick={toggleSound}
-          aria-label={soundEnabled ? "Turn background sound off" : "Turn background sound on"}
-          className="enter-button inline-flex h-[29px] w-[29px] items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-[#F4F7F6] backdrop-blur-[12px] transition-[background-color,border-color,color,backdrop-filter,transform,opacity] duration-300 ease-out hover:border-[#00C2B3]/70 hover:bg-white/[0.06] hover:text-[#00C2B3] focus-visible:border-[#00C2B3]/70 focus-visible:outline-none focus-visible:ring-0 active:translate-y-[2px]"
-        >
-          {soundEnabled ? (
-            <svg viewBox="0 0 24 24" className="h-[16px] w-[16px]" fill="none" aria-hidden="true">
-              <path d="M4.75 10.5v3h3.2l4.25 3.25V7.25L7.95 10.5h-3.2Z" fill="currentColor" />
-              <path d="M15.5 8.5c1.1 1.05 1.75 2.47 1.75 4s-.65 2.95-1.75 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              <path d="M17.75 6.25c1.7 1.65 2.75 3.92 2.75 6.25s-1.05 4.6-2.75 6.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" className="h-[16px] w-[16px]" fill="none" aria-hidden="true">
-              <path d="M4.75 10.5v3h3.2l4.25 3.25V7.25L7.95 10.5h-3.2Z" fill="currentColor" />
-              <path d="M16.25 8.25 20 12l-3.75 3.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M20 8.25 16.25 12 20 15.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )}
-        </button>
+          icon={
+            soundEnabled ? (
+              <svg viewBox="0 0 24 24" className="h-[16px] w-[16px]" fill="none" aria-hidden="true">
+                <path d="M4.75 10.5v3h3.2l4.25 3.25V7.25L7.95 10.5h-3.2Z" fill="currentColor" />
+                <path d="M15.5 8.5c1.1 1.05 1.75 2.47 1.75 4s-.65 2.95-1.75 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <path d="M17.75 6.25c1.7 1.65 2.75 3.92 2.75 6.25s-1.05 4.6-2.75 6.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" className="h-[16px] w-[16px]" fill="none" aria-hidden="true">
+                <path d="M4.75 10.5v3h3.2l4.25 3.25V7.25L7.95 10.5h-3.2Z" fill="currentColor" />
+                <path d="M16.25 8.25 20 12l-3.75 3.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M20 8.25 16.25 12 20 15.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )
+          }
+        />
       </div>
 
       <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 pointer-events-auto">
