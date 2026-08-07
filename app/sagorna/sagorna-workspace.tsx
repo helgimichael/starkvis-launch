@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { getSagornaContentTypeMeta } from "./sagorna-content";
@@ -26,6 +26,16 @@ const TRACKS = [
   { title: "Ginnungagap", src: "/ginnungagap.mp3" },
 ] as const;
 
+const BACKGROUND_VIDEO_SRC = "/sagorna-bakgrund.mp4";
+
+function shouldDelayBackgroundVideo() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.matchMedia("(max-width: 767px), (prefers-reduced-data: reduce), (prefers-reduced-motion: reduce)").matches;
+}
+
 function formatTime(value: number) {
   if (!Number.isFinite(value) || value < 0) {
     return "0:00";
@@ -47,9 +57,11 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadedTrackRef = useRef("");
+  const playbackPersistedAtRef = useRef(0);
   const soundEnabledRef = useRef(true);
   const isPlayingRef = useRef(false);
   const backgroundPausedRef = useRef(false);
+  const [backgroundVideoSrc, setBackgroundVideoSrc] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -93,19 +105,45 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
     return findCmsItemBySlug(archiveItems, archiveFocusedSlug);
   }, [archiveFocusedSlug, archiveItems]);
 
+  const loadArchiveItems = useCallback(async () => {
+    const reloadedArchived = await listArchivedCmsItems();
+    setArchiveItems(reloadedArchived);
+  }, []);
+
+  const startBackgroundVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || backgroundPausedRef.current) {
+      return;
+    }
+
+    video.playsInline = true;
+    video.defaultMuted = true;
+    video.muted = true;
+    video.volume = 1;
+
+    void video.play()
+      .then(() => {
+        if (!backgroundPausedRef.current && soundEnabledRef.current && !isPlayingRef.current) {
+          requestAnimationFrame(() => {
+            const currentVideo = videoRef.current;
+            if (currentVideo && !backgroundPausedRef.current && soundEnabledRef.current && !isPlayingRef.current) {
+              currentVideo.muted = false;
+            }
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
     const refresh = async () => {
       try {
-        const [reloadedPublished, reloadedArchived] = await Promise.all([
-          listPublishedCmsItems(),
-          listArchivedCmsItems(),
-        ]);
+        const reloadedPublished = await listPublishedCmsItems();
 
         if (!cancelled) {
           setItems(reloadedPublished);
-          setArchiveItems(reloadedArchived);
           setLoaded(true);
         }
       } catch {
@@ -123,6 +161,30 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timeout: number | undefined;
+
+    const enableVideo = () => {
+      if (!cancelled) {
+        setBackgroundVideoSrc(BACKGROUND_VIDEO_SRC);
+      }
+    };
+
+    if (shouldDelayBackgroundVideo()) {
+      timeout = window.setTimeout(enableVideo, 1200);
+    } else {
+      window.requestAnimationFrame(enableVideo);
+    }
+
+    return () => {
+      cancelled = true;
+      if (timeout) {
+        window.clearTimeout(timeout);
+      }
     };
   }, []);
 
@@ -148,33 +210,17 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
     backgroundPausedRef.current = backgroundPaused;
   }, [backgroundPaused]);
 
-  useLayoutEffect(() => {
-    const video = videoRef.current;
-    if (!video || backgroundPausedRef.current) {
+  useEffect(() => {
+    if (!backgroundVideoSrc) {
       return;
     }
 
-    video.playsInline = true;
-    video.muted = true;
-    video.volume = 1;
-
-    void video.play()
-      .then(() => {
-        if (!backgroundPausedRef.current && soundEnabledRef.current && !isPlayingRef.current) {
-          requestAnimationFrame(() => {
-            const currentVideo = videoRef.current;
-            if (currentVideo && !backgroundPausedRef.current && soundEnabledRef.current && !isPlayingRef.current) {
-              currentVideo.muted = false;
-            }
-          });
-        }
-      })
-      .catch(() => {});
-  }, []);
+    startBackgroundVideo();
+  }, [backgroundVideoSrc, startBackgroundVideo]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) {
+    if (!video || !backgroundVideoSrc) {
       return;
     }
 
@@ -187,7 +233,7 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
     video.muted = isPlaying || !soundEnabled;
 
     void video.play().catch(() => {});
-  }, [backgroundPaused, isPlaying, soundEnabled]);
+  }, [backgroundPaused, backgroundVideoSrc, isPlaying, soundEnabled]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -286,7 +332,7 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
     const next = !animationEnabled;
     setAnimationEnabled(next);
 
-    if (!next) {
+    if (next) {
       void video.play().catch(() => {});
     } else {
       video.pause();
@@ -339,8 +385,26 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
     setArchiveOpen(false);
   };
 
+  const openArchive = () => {
+    setArchiveOpen(true);
+    if (archiveItems.length === 0) {
+      void loadArchiveItems().catch(() => {});
+    }
+  };
+
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-black">
+      <Image
+        src="/sagorna-still.jpeg"
+        alt=""
+        fill
+        priority
+        quality={72}
+        sizes="100vw"
+        className="absolute inset-0 h-full w-full object-cover"
+        aria-hidden="true"
+      />
+
       <Link
         href="/"
         aria-label="STARKVIS"
@@ -351,31 +415,37 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
           alt=""
           width={1536}
           height={1024}
-          priority
           quality={100}
           className="h-[30px] w-auto sm:h-[36px] lg:h-[40px]"
         />
       </Link>
 
-      <video
-        ref={videoRef}
-        className="absolute inset-0 h-full w-full object-cover"
-        src="/sagorna-bakgrund.mp4"
-        autoPlay
-        loop
-        playsInline
-        preload="auto"
-        aria-hidden="true"
-      />
+      {backgroundVideoSrc ? (
+        <video
+          ref={videoRef}
+          className="absolute inset-0 h-full w-full object-cover"
+          src={backgroundVideoSrc}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          onCanPlay={startBackgroundVideo}
+          aria-hidden="true"
+        />
+      ) : null}
 
       <audio
         ref={audioRef}
-        preload="auto"
+        preload="none"
         onEnded={handleTrackEnded}
         onTimeUpdate={(event) => {
           const nextTime = event.currentTarget.currentTime;
           setCurrentTime(nextTime);
-          setPlaybackPosition(nextTime);
+          if (nextTime - playbackPersistedAtRef.current >= 5) {
+            playbackPersistedAtRef.current = nextTime;
+            setPlaybackPosition(nextTime);
+          }
         }}
         onLoadedMetadata={(event) => {
           setDuration(event.currentTarget.duration || 0);
@@ -528,7 +598,7 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
 
         <button
           type="button"
-          onClick={() => setArchiveOpen(true)}
+          onClick={openArchive}
           aria-label="Open archive"
           className="enter-button inline-flex h-[29px] w-[29px] items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-[#F4F7F6] backdrop-blur-[12px] transition-[background-color,border-color,color,backdrop-filter,transform,opacity] duration-300 ease-out hover:border-[#00C2B3]/70 hover:bg-white/[0.06] hover:text-[#00C2B3] focus-visible:border-[#00C2B3]/70 focus-visible:outline-none focus-visible:ring-0 active:translate-y-[2px]"
         >
