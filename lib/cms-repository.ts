@@ -7,6 +7,7 @@ import {
 } from "@/app/sagorna/sagorna-content";
 
 const CMS_TABLE = "cms_items";
+const PUBLIC_SAGORNA_RPC = "list_public_sagorna_items";
 type CmsSupabaseClient = typeof supabase;
 
 type CmsItemRow = {
@@ -178,11 +179,24 @@ export async function listCmsItems(cmsClient: CmsSupabaseClient = supabase): Pro
 }
 
 export async function listPublishedCmsItems() {
-  return (await listCmsItems()).map(resolvePublicItem).filter(isPublishedForPublic).sort(sortByCreatedAt);
+  const { data, error } = await supabase.rpc(PUBLIC_SAGORNA_RPC);
+
+  if (error) {
+    throw new Error(`Could not load published CMS items: ${error.message}`);
+  }
+
+  return normalizeSagornaItems(((data ?? []) as unknown[]).map((row) => rowToItem(row as CmsItemRow)).filter(Boolean))
+    .map(resolvePublicItem)
+    .filter(isPublishedForPublic)
+    .sort(sortByCreatedAt);
 }
 
 export async function listArchivedCmsItems() {
   return (await listCmsItems()).filter((item) => item.status === "archived").sort(sortByCreatedAt);
+}
+
+export async function getPublishedCmsItemBySlug(slug: string) {
+  return (await listPublishedCmsItems()).find((item) => item.slug === slug) ?? null;
 }
 
 export async function getCmsItemBySlug(slug: string, cmsClient: CmsSupabaseClient = supabase) {

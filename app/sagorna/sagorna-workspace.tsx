@@ -13,7 +13,6 @@ import {
   findCmsItemBySlug,
   type SagornaItem,
 } from "./sagorna-content";
-import { listArchivedCmsItems, listPublishedCmsItems } from "@/lib/cms-repository";
 
 const TRACKS = [
   { title: "Iron Frost", src: "/iron-frost.mp3" },
@@ -51,6 +50,25 @@ function formatTime(value: number) {
 type SagornaWorkspaceProps = {
   activeSlug?: string;
 };
+
+type PublicSagornaItemsResponse =
+  | { success: true; items: SagornaItem[] }
+  | { success: false; message?: string };
+
+async function fetchPublishedSagornaItems() {
+  const response = await fetch("/api/sagorna/items", {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  const body = (await response.json()) as PublicSagornaItemsResponse;
+
+  if (!response.ok || !body.success) {
+    throw new Error(body.success ? "Could not load Sagorna items." : body.message ?? "Could not load Sagorna items.");
+  }
+
+  return body.items;
+}
 
 export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
   const router = useRouter();
@@ -106,8 +124,7 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
   }, [archiveFocusedSlug, archiveItems]);
 
   const loadArchiveItems = useCallback(async () => {
-    const reloadedArchived = await listArchivedCmsItems();
-    setArchiveItems(reloadedArchived);
+    setArchiveItems([]);
   }, []);
 
   const startBackgroundVideo = useCallback(() => {
@@ -140,7 +157,7 @@ export function SagornaWorkspace({ activeSlug }: SagornaWorkspaceProps) {
 
     const refresh = async () => {
       try {
-        const reloadedPublished = await listPublishedCmsItems();
+        const reloadedPublished = await fetchPublishedSagornaItems();
 
         if (!cancelled) {
           setItems(reloadedPublished);
