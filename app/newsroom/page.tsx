@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, FormEvent, ReactNode } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { SagornaItemCard } from "../sagorna/sagorna-render";
 import {
   clampPercent,
@@ -26,7 +27,59 @@ import {
   upsertCmsItem,
   validateSagornaItem,
 } from "../sagorna/sagorna-content";
-import { listCmsItems, replaceCmsItems } from "@/lib/cms-repository";
+import { supabase } from "@/lib/supabase-client";
+import type { SagornaCollection } from "../sagorna/sagorna-content";
+
+type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+
+type CmsItemsResponse =
+  | { success: true; items: SagornaCollection }
+  | { success: false; message?: string };
+
+async function getAuthenticatedAccessToken() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.access_token) {
+    throw new Error("Authentication required");
+  }
+
+  return data.session.access_token;
+}
+
+async function requestCmsItems() {
+  const token = await getAuthenticatedAccessToken();
+  const response = await fetch("/api/newsroom/cms", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+  const body = (await response.json()) as CmsItemsResponse;
+
+  if (!response.ok || !body.success) {
+    throw new Error(body.success ? "Could not load CMS items" : body.message ?? "Could not load CMS items");
+  }
+
+  return body.items;
+}
+
+async function requestReplaceCmsItems(nextItems: SagornaCollection, previousItems: SagornaCollection) {
+  const token = await getAuthenticatedAccessToken();
+  const response = await fetch("/api/newsroom/cms", {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ nextItems, previousItems }),
+  });
+  const body = (await response.json()) as CmsItemsResponse;
+
+  if (!response.ok || !body.success) {
+    throw new Error(body.success ? "Could not save CMS items" : body.message ?? "Could not save CMS items");
+  }
+
+  return body.items;
+}
 
 function matchesQuery(item: SagornaItem, query: string) {
   if (!query) {
@@ -123,6 +176,111 @@ function CollapsibleSection({ title, children }: CollapsibleSectionProps) {
   );
 }
 
+type NewsroomLoginProps = {
+  onAuthenticated: (session: Session) => void;
+};
+
+function NewsroomLogin({ onAuthenticated }: NewsroomLoginProps) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setErrorMessage("");
+
+    const nextEmail = email.trim();
+    if (!nextEmail || !password) {
+      setErrorMessage("Enter your email and password to continue.");
+      return;
+    }
+
+    setLoading(true);
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: nextEmail,
+      password,
+    });
+
+    setLoading(false);
+
+    if (error || !data.session) {
+      setErrorMessage("We could not sign you in. Check your email and password.");
+      return;
+    }
+
+    onAuthenticated(data.session);
+  };
+
+  return (
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-black px-6 py-10 text-[#F4F7F6]">
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-60"
+        style={{ backgroundImage: "url('/intro-bakgrund.jpeg')" }}
+        aria-hidden="true"
+      />
+      <div className="absolute inset-0 bg-black/55" aria-hidden="true" />
+
+      <section className="relative z-10 w-full max-w-sm rounded-[16px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-[12px]">
+        <div className="mb-6">
+          <Image
+            src="/starkvis-logo-white.png"
+            alt=""
+            width={1536}
+            height={1024}
+            priority
+            quality={100}
+            className="h-[34px] w-auto"
+          />
+          <p className="mt-5 text-[0.58rem] uppercase tracking-[0.38em] text-[#F4F7F6]/45">Private</p>
+          <h1 className="mt-1.5 text-[1.35rem] font-semibold tracking-[0.02em] text-[#F4F7F6]">STARKVIS Newsroom</h1>
+        </div>
+
+        <form onSubmit={handleLogin} className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              disabled={loading}
+              className="h-11 w-full rounded-[14px] border border-white/10 bg-black/25 px-3 text-sm text-[#F4F7F6] outline-none transition-colors focus:border-[#00C2B3]/60"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.2em] text-[#F4F7F6]/45">Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              disabled={loading}
+              className="h-11 w-full rounded-[14px] border border-white/10 bg-black/25 px-3 text-sm text-[#F4F7F6] outline-none transition-colors focus:border-[#00C2B3]/60"
+            />
+          </label>
+
+          {errorMessage ? (
+            <p className="rounded-[14px] border border-white/10 bg-white/[0.03] px-3 py-2 text-sm leading-6 text-[#F4F7F6]/78" aria-live="polite">
+              {errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="h-11 w-full rounded-[16px] border border-white/10 bg-white/[0.04] text-[0.61rem] font-medium uppercase tracking-[0.25em] text-[#F4F7F6] backdrop-blur-[12px] transition-colors duration-300 ease-out hover:border-[#00C2B3]/70 hover:bg-white/[0.06] hover:text-[#00C2B3] focus-visible:border-[#00C2B3]/70 focus-visible:outline-none disabled:cursor-default disabled:opacity-65"
+          >
+            {loading ? "Logging in" : "Login"}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
 export default function NewsroomPage() {
   const previewRef = useRef<HTMLDivElement | null>(null);
   const draggedItemIdRef = useRef("");
@@ -135,6 +293,8 @@ export default function NewsroomPage() {
   const [publishTimeField, setPublishTimeField] = useState("");
   const [status, setStatus] = useState("Loading Supabase CMS");
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
 
   const listItems = useMemo(
     () => [...items].filter((item) => matchesQuery(item, search.trim().toLowerCase())).sort(sortByRecency),
@@ -147,11 +307,43 @@ export default function NewsroomPage() {
   const previewRenderItems = publishedItems;
 
   useEffect(() => {
+    let mounted = true;
+
+    const restoreSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) {
+        return;
+      }
+
+      setSession(data.session);
+      setAuthStatus(data.session ? "authenticated" : "unauthenticated");
+    };
+
+    void restoreSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthStatus(nextSession ? "authenticated" : "unauthenticated");
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
     let cancelled = false;
 
     const refresh = async () => {
       try {
-        const loaded = (await listCmsItems()).sort(sortByRecency);
+        const loaded = (await requestCmsItems()).sort(sortByRecency);
         if (cancelled) {
           return;
         }
@@ -196,7 +388,7 @@ export default function NewsroomPage() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, []);
+  }, [session]);
 
   const commitItems = async (nextItems: SagornaItem[], nextSelectedId?: string, successMessage = "Saved to Supabase") => {
     const sorted = [...nextItems].sort(sortByRecency);
@@ -209,7 +401,7 @@ export default function NewsroomPage() {
     }
 
     try {
-      const saved = (await replaceCmsItems(sorted, previousItems)).sort(sortByRecency);
+      const saved = (await requestReplaceCmsItems(sorted, previousItems)).sort(sortByRecency);
       setItems(saved);
       if (typeof nextSelectedId === "string") {
         const optimisticSelection = sorted.find((item) => item.id === nextSelectedId);
@@ -493,6 +685,37 @@ export default function NewsroomPage() {
     updateDraft(key, value);
   };
 
+  const handleLogout = async () => {
+    setStatus("Signing out");
+    await supabase.auth.signOut();
+    setSession(null);
+    setAuthStatus("unauthenticated");
+    setItems([]);
+    setSelectedId("");
+    setDraft(createEmptySagornaItem("text"));
+    initializedSelectionRef.current = false;
+    setStatus("Loading Supabase CMS");
+  };
+
+  if (authStatus === "loading") {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-[#050607] px-6 text-[#F4F7F6]">
+        <p className="text-[0.58rem] uppercase tracking-[0.32em] text-[#F4F7F6]/55">Loading Newsroom</p>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <NewsroomLogin
+        onAuthenticated={(nextSession) => {
+          setSession(nextSession);
+          setAuthStatus("authenticated");
+        }}
+      />
+    );
+  }
+
   return (
     <main className="min-h-dvh bg-[#050607] px-3 py-3 text-[#F4F7F6] sm:px-4 sm:py-4">
       <div className="mx-auto flex max-w-[1800px] flex-col gap-3">
@@ -504,7 +727,16 @@ export default function NewsroomPage() {
                 STARKVIS Newsroom
               </h1>
             </div>
-            <p className="max-w-sm text-right text-[0.8rem] leading-5 text-[#F4F7F6]/55">{status}</p>
+            <div className="flex items-center gap-3">
+              <p className="max-w-sm text-right text-[0.8rem] leading-5 text-[#F4F7F6]/55">{status}</p>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="h-8 rounded-[14px] border border-white/10 bg-white/[0.04] px-3 text-[0.55rem] uppercase tracking-[0.18em] text-[#F4F7F6]/70 transition-colors hover:border-[#00C2B3]/45 hover:text-[#00C2B3]"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </header>
 

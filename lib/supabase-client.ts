@@ -7,4 +7,22 @@ if (!supabaseUrl || !supabasePublishableKey) {
   throw new Error("Missing Supabase environment variables");
 }
 
-export const supabase = createClient(supabaseUrl, supabasePublishableKey);
+const resolvedSupabaseUrl = supabaseUrl;
+const resolvedSupabasePublishableKey = supabasePublishableKey;
+
+export const supabase = createClient(resolvedSupabaseUrl, resolvedSupabasePublishableKey);
+
+export function createSupabaseRequestClient(accessToken: string) {
+  return createClient(resolvedSupabaseUrl, resolvedSupabasePublishableKey, {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  });
+}

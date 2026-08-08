@@ -7,6 +7,7 @@ import {
 } from "@/app/sagorna/sagorna-content";
 
 const CMS_TABLE = "cms_items";
+type CmsSupabaseClient = typeof supabase;
 
 type CmsItemRow = {
   id: string | number;
@@ -166,8 +167,8 @@ function sortByCreatedAt(left: SagornaItem, right: SagornaItem) {
   return left.createdAt - right.createdAt;
 }
 
-export async function listCmsItems(): Promise<SagornaCollection> {
-  const { data, error } = await supabase.from(CMS_TABLE).select("*").order("created_at", { ascending: true });
+export async function listCmsItems(cmsClient: CmsSupabaseClient = supabase): Promise<SagornaCollection> {
+  const { data, error } = await cmsClient.from(CMS_TABLE).select("*").order("created_at", { ascending: true });
 
   if (error) {
     throw new Error(`Could not load CMS items: ${error.message}`);
@@ -184,8 +185,8 @@ export async function listArchivedCmsItems() {
   return (await listCmsItems()).filter((item) => item.status === "archived").sort(sortByCreatedAt);
 }
 
-export async function getCmsItemBySlug(slug: string) {
-  const { data, error } = await supabase.from(CMS_TABLE).select("*").eq("slug", slug).maybeSingle();
+export async function getCmsItemBySlug(slug: string, cmsClient: CmsSupabaseClient = supabase) {
+  const { data, error } = await cmsClient.from(CMS_TABLE).select("*").eq("slug", slug).maybeSingle();
 
   if (error) {
     throw new Error(`Could not load CMS item: ${error.message}`);
@@ -194,7 +195,7 @@ export async function getCmsItemBySlug(slug: string) {
   return data ? rowToItem(data as CmsItemRow) : null;
 }
 
-export async function upsertCmsItemRecord(item: SagornaItem) {
+export async function upsertCmsItemRecord(item: SagornaItem, cmsClient: CmsSupabaseClient = supabase) {
   const [normalized] = normalizeSagornaItems([item]);
   if (!normalized) {
     throw new Error("Could not save CMS item: invalid item");
@@ -202,8 +203,8 @@ export async function upsertCmsItemRecord(item: SagornaItem) {
 
   const row = itemToRow(normalized);
   const query = /^\d+$/.test(normalized.id)
-    ? supabase.from(CMS_TABLE).upsert(row, { onConflict: "id" })
-    : supabase.from(CMS_TABLE).insert(row);
+    ? cmsClient.from(CMS_TABLE).upsert(row, { onConflict: "id" })
+    : cmsClient.from(CMS_TABLE).insert(row);
   const { data, error } = await query.select("*").single();
 
   if (error) {
@@ -218,21 +219,25 @@ export async function upsertCmsItemRecord(item: SagornaItem) {
   return saved;
 }
 
-export async function deleteCmsItemRecord(id: string) {
-  const { error } = await supabase.from(CMS_TABLE).delete().eq("id", id);
+export async function deleteCmsItemRecord(id: string, cmsClient: CmsSupabaseClient = supabase) {
+  const { error } = await cmsClient.from(CMS_TABLE).delete().eq("id", id);
 
   if (error) {
     throw new Error(`Could not delete CMS item: ${error.message}`);
   }
 }
 
-export async function replaceCmsItems(nextItems: SagornaCollection, previousItems: SagornaCollection) {
+export async function replaceCmsItems(
+  nextItems: SagornaCollection,
+  previousItems: SagornaCollection,
+  cmsClient: CmsSupabaseClient = supabase,
+) {
   const normalized = normalizeSagornaItems(nextItems);
   const nextIds = new Set(normalized.map((item) => item.id));
   const removedIds = previousItems.map((item) => item.id).filter((id) => !nextIds.has(id));
 
   if (removedIds.length > 0) {
-    const { error } = await supabase.from(CMS_TABLE).delete().in("id", removedIds);
+    const { error } = await cmsClient.from(CMS_TABLE).delete().in("id", removedIds);
     if (error) {
       throw new Error(`Could not delete CMS item: ${error.message}`);
     }
@@ -247,7 +252,7 @@ export async function replaceCmsItems(nextItems: SagornaCollection, previousItem
   const savedRows: unknown[] = [];
 
   if (existingRows.length > 0) {
-    const { data, error } = await supabase.from(CMS_TABLE).upsert(existingRows, { onConflict: "id" }).select("*");
+    const { data, error } = await cmsClient.from(CMS_TABLE).upsert(existingRows, { onConflict: "id" }).select("*");
 
     if (error) {
       throw new Error(`Could not save CMS items: ${error.message}`);
@@ -257,7 +262,7 @@ export async function replaceCmsItems(nextItems: SagornaCollection, previousItem
   }
 
   if (newRows.length > 0) {
-    const { data, error } = await supabase.from(CMS_TABLE).insert(newRows).select("*");
+    const { data, error } = await cmsClient.from(CMS_TABLE).insert(newRows).select("*");
 
     if (error) {
       throw new Error(`Could not save CMS items: ${error.message}`);

@@ -27,3 +27,21 @@ npm run lint
 ```
 
 Runs ESLint.
+
+## Notify Form Email
+
+The landing page notify form posts to `/api/notify`, which sends signup notifications to `hello@starkv.is` through Resend.
+
+Configure this Cloudflare Worker secret before deploy:
+
+```bash
+npx wrangler secret put RESEND_API_KEY
+```
+
+Required Resend environment variable:
+
+```bash
+RESEND_API_KEY
+```
+
+The Resend sending domain must allow `STARKVIS <hello@starkv.is>` as the sender.
