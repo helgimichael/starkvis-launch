@@ -5,9 +5,40 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { SagornaIconButton } from "./sagorna/sagorna-icon-button";
 
 type NotifyStatus = "idle" | "loading" | "success" | "duplicate" | "invalid" | "error";
+
+const productIcons = [
+  {
+    name: "FIELD",
+    src: "/branding/field/field-icon.png",
+    href: "https://field.starkv.is",
+    glow: "drop-shadow-[0_0_7px_rgba(0,194,179,0.5)]",
+    hoverGlow: "hover:drop-shadow-[0_0_11px_rgba(58,255,190,0.72)] focus-visible:drop-shadow-[0_0_11px_rgba(58,255,190,0.72)]",
+  },
+  {
+    name: "LENS",
+    src: "/branding/lens/lens-icon.png",
+    href: "https://lens.starkv.is",
+    glow: "drop-shadow-[0_0_7px_rgba(167,91,255,0.52)]",
+    hoverGlow: "hover:drop-shadow-[0_0_11px_rgba(190,120,255,0.74)] focus-visible:drop-shadow-[0_0_11px_rgba(190,120,255,0.74)]",
+  },
+  {
+    name: "FORGE",
+    src: "/branding/forge/forge-icon.png",
+    glow: "drop-shadow-[0_0_7px_rgba(255,125,45,0.48)]",
+  },
+  {
+    name: "SIGNAL",
+    src: "/branding/signal/signal-icon.png",
+    glow: "drop-shadow-[0_0_7px_rgba(67,174,255,0.5)]",
+  },
+  {
+    name: "TRACE",
+    src: "/branding/trace/trace-icon.png",
+    glow: "drop-shadow-[0_0_7px_rgba(255,65,177,0.5)]",
+  },
+] as const;
 
 export default function Home() {
   const router = useRouter();
@@ -169,20 +200,44 @@ export default function Home() {
         />
       </Link>
 
-      <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
-        <SagornaIconButton
-          ariaLabel="Open tactical board"
-          onClick={() => {
-            window.open("https://tacticalboard.starkv.is", "_blank", "noopener,noreferrer");
-          }}
-          icon={
-            <svg viewBox="0 0 24 24" className="h-[16px] w-[16px]" fill="none" aria-hidden="true">
-              <rect x="5" y="5" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M8 8h3.5M8 12h8M8 16h5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              <path d="M15.5 8.5 18 11l-2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+      <div className="absolute right-4 top-4 z-20 flex flex-nowrap items-center gap-2">
+        {productIcons.map((product) => {
+          const icon = (
+            <Image
+              src={product.src}
+              alt=""
+              width={96}
+              height={96}
+              quality={100}
+              className={`h-[41px] w-[41px] object-contain transition-[filter,opacity,transform] duration-300 ease-out ${product.glow}`}
+            />
+          );
+
+          if ("href" in product) {
+            return (
+              <a
+                key={product.name}
+                href={product.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open STARKVIS ${product.name}`}
+                className={`inline-flex h-[57px] w-[57px] items-center justify-center rounded-[16px] transition-[filter,opacity,transform] duration-300 ease-out hover:scale-[1.04] focus-visible:scale-[1.04] focus-visible:outline-none focus-visible:ring-0 ${product.hoverGlow}`}
+              >
+                {icon}
+              </a>
+            );
           }
-        />
+
+          return (
+            <span
+              key={product.name}
+              aria-hidden="true"
+              className="inline-flex h-[57px] w-[57px] cursor-default items-center justify-center rounded-[16px]"
+            >
+              {icon}
+            </span>
+          );
+        })}
       </div>
 
 
