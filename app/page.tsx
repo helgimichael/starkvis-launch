@@ -31,7 +31,9 @@ const productIcons = [
   {
     name: "SIGNAL",
     src: "/branding/signal/signal-icon.png",
+    href: "https://signal.starkv.is",
     glow: "drop-shadow-[0_0_7px_rgba(67,174,255,0.5)]",
+    hoverGlow: "hover:drop-shadow-[0_0_11px_rgba(93,190,255,0.72)] focus-visible:drop-shadow-[0_0_11px_rgba(93,190,255,0.72)]",
   },
   {
     name: "TRACE",
